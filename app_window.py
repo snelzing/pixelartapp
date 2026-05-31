@@ -146,6 +146,7 @@ class MainWindow(QMainWindow):
         self._color_indicator = QFrame()
         self._color_indicator.setFixedSize(32, 32)
         self._color_indicator.setStyleSheet("background-color: #000000; border: 2px solid #888; border-radius: 3px;")
+        self._color_indicator.setToolTip("Current color")
         toolbar.addWidget(self._color_indicator)
 
     def _setup_docks(self):
@@ -169,8 +170,8 @@ class MainWindow(QMainWindow):
         scroll.setWidget(self._canvas)
         scroll.setWidgetResizable(True)
         scroll.setAlignment(Qt.AlignCenter)
-        scroll.setStyleSheet("QScrollArea { background-color: #1E1E1E; border: none; }")
-        self._canvas.setStyleSheet("background-color: #2D2D2D;")
+        scroll.setStyleSheet("QScrollArea { background-color: #CCCCCC; border: none; }")
+        self._canvas.setStyleSheet("background-color: #DDDDDD;")
         self.setCentralWidget(scroll)
 
     def _setup_statusbar(self):

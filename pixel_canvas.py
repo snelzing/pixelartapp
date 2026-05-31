@@ -75,6 +75,7 @@ class PixelCanvas(QWidget):
 
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
+        self.setToolTip("Canvas — scroll to zoom, click to draw")
 
         self.new_canvas(32, 32)
 

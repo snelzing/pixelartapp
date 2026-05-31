@@ -69,6 +69,7 @@ class ColorPalette(QWidget):
 
         self._current_color_btn = QPushButton()
         self._current_color_btn.setFixedHeight(30)
+        self._current_color_btn.setToolTip("Click to pick a custom color")
         self._current_color_btn.clicked.connect(self._pick_color)
         layout.addWidget(self._current_color_btn)
 
@@ -79,6 +80,7 @@ class ColorPalette(QWidget):
         for i, hex_val in enumerate(self.PRESETS):
             c = QColor(hex_val)
             sw = ColorSwatch(c)
+            sw.setToolTip(f"#{c.red():02X}{c.green():02X}{c.blue():02X}")
             sw.clicked.connect(lambda checked=False, color=c: self._on_swatch_click(color))
             self._swatches.append(sw)
             grid.addWidget(sw, i // cols, i % cols)
@@ -129,12 +131,12 @@ class LayerPanel(QWidget):
         layout.setSpacing(4)
 
         toolbar = QHBoxLayout()
-        self._btn_add = QToolButton(); self._btn_add.setText("+"); self._btn_add.clicked.connect(self.add_requested)
-        self._btn_dup = QToolButton(); self._btn_dup.setText("⧉"); self._btn_dup.clicked.connect(self.duplicate_requested)
-        self._btn_del = QToolButton(); self._btn_del.setText("−"); self._btn_del.clicked.connect(self.delete_requested)
-        self._btn_merge = QToolButton(); self._btn_merge.setText("⇣"); self._btn_merge.clicked.connect(self.merge_down_requested)
-        self._btn_up = QToolButton(); self._btn_up.setText("↑"); self._btn_up.clicked.connect(self.move_up_requested)
-        self._btn_down = QToolButton(); self._btn_down.setText("↓"); self._btn_down.clicked.connect(self.move_down_requested)
+        self._btn_add = QToolButton(); self._btn_add.setText("+"); self._btn_add.setToolTip("Add layer"); self._btn_add.clicked.connect(self.add_requested)
+        self._btn_dup = QToolButton(); self._btn_dup.setText("⧉"); self._btn_dup.setToolTip("Duplicate layer"); self._btn_dup.clicked.connect(self.duplicate_requested)
+        self._btn_del = QToolButton(); self._btn_del.setText("−"); self._btn_del.setToolTip("Delete layer"); self._btn_del.clicked.connect(self.delete_requested)
+        self._btn_merge = QToolButton(); self._btn_merge.setText("⇣"); self._btn_merge.setToolTip("Merge down"); self._btn_merge.clicked.connect(self.merge_down_requested)
+        self._btn_up = QToolButton(); self._btn_up.setText("↑"); self._btn_up.setToolTip("Move layer up"); self._btn_up.clicked.connect(self.move_up_requested)
+        self._btn_down = QToolButton(); self._btn_down.setText("↓"); self._btn_down.setToolTip("Move layer down"); self._btn_down.clicked.connect(self.move_down_requested)
         for btn in [self._btn_add, self._btn_dup, self._btn_del, self._btn_merge, self._btn_up, self._btn_down]:
             btn.setFixedSize(26, 26)
             toolbar.addWidget(btn)
@@ -143,6 +145,7 @@ class LayerPanel(QWidget):
 
         self._list = QListWidget()
         self._list.setDragDropMode(QListWidget.InternalMove)
+        self._list.setToolTip("Drag to reorder layers. [V] = visible, [L] = locked")
         self._list.currentRowChanged.connect(self._on_selection)
         self._list.model().rowsMoved.connect(self._on_reorder)
         layout.addWidget(self._list)
@@ -150,6 +153,7 @@ class LayerPanel(QWidget):
         self._opacity_slider = QSlider(Qt.Horizontal)
         self._opacity_slider.setRange(0, 100)
         self._opacity_slider.setValue(100)
+        self._opacity_slider.setToolTip("Layer opacity")
         self._opacity_slider.valueChanged.connect(self._on_opacity)
         opacity_layout = QHBoxLayout()
         opacity_layout.addWidget(QLabel("Opacity:"))
@@ -158,6 +162,7 @@ class LayerPanel(QWidget):
 
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("Layer name")
+        self._name_edit.setToolTip("Rename selected layer")
         self._name_edit.editingFinished.connect(self._on_rename)
         layout.addWidget(self._name_edit)
 
@@ -221,6 +226,7 @@ class FrameThumbnail(QFrame):
         super().__init__()
         self.index = index
         self._selected = False
+        self.setToolTip(f"Frame {index + 1}")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
         self._label = QLabel()
@@ -262,10 +268,10 @@ class AnimationPanel(QWidget):
         layout.setSpacing(4)
 
         toolbar = QHBoxLayout()
-        self._btn_add = QToolButton(); self._btn_add.setText("+"); self._btn_add.clicked.connect(self.add_frame_requested)
-        self._btn_dup = QToolButton(); self._btn_dup.setText("⧉"); self._btn_dup.clicked.connect(self.duplicate_frame_requested)
-        self._btn_del = QToolButton(); self._btn_del.setText("−"); self._btn_del.clicked.connect(self.delete_frame_requested)
-        self._btn_play = QToolButton(); self._btn_play.setText("▶"); self._btn_play.setCheckable(True); self._btn_play.clicked.connect(self._on_play)
+        self._btn_add = QToolButton(); self._btn_add.setText("+"); self._btn_add.setToolTip("Add frame"); self._btn_add.clicked.connect(self.add_frame_requested)
+        self._btn_dup = QToolButton(); self._btn_dup.setText("⧉"); self._btn_dup.setToolTip("Duplicate frame"); self._btn_dup.clicked.connect(self.duplicate_frame_requested)
+        self._btn_del = QToolButton(); self._btn_del.setText("−"); self._btn_del.setToolTip("Delete frame"); self._btn_del.clicked.connect(self.delete_frame_requested)
+        self._btn_play = QToolButton(); self._btn_play.setText("▶"); self._btn_play.setCheckable(True); self._btn_play.setToolTip("Play / Stop"); self._btn_play.clicked.connect(self._on_play)
         for btn in [self._btn_add, self._btn_dup, self._btn_del, self._btn_play]:
             btn.setFixedSize(26, 26)
             toolbar.addWidget(btn)
@@ -274,11 +280,13 @@ class AnimationPanel(QWidget):
         self._fps_spin = QSpinBox()
         self._fps_spin.setRange(1, 60)
         self._fps_spin.setValue(12)
+        self._fps_spin.setToolTip("Frames per second")
         toolbar.addWidget(self._fps_spin)
 
         self._onion_cb = QComboBox()
         self._onion_cb.addItems(["Off", "1 Before", "2 Before", "1+1", "1 Before+After"])
         self._onion_cb.currentIndexChanged.connect(self._on_onion_change)
+        self._onion_cb.setToolTip("Onion skinning: show previous/next frames as overlay")
         toolbar.addWidget(QLabel("Onion:"))
         toolbar.addWidget(self._onion_cb)
 
