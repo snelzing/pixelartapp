@@ -16,6 +16,7 @@ from pixel_canvas import PixelCanvas, Symmetry
 from tools import TOOLS, Tool
 from widgets import ColorPalette, LayerPanel, AnimationPanel
 from dialogs import NewCanvasDialog, ResizeDialog
+import updater
 
 
 class ToolButton(QToolButton):
@@ -114,6 +115,10 @@ class MainWindow(QMainWindow):
         view_menu.addAction("Zoom &Out", self._canvas.zoom_out, shortcut=QKeySequence.ZoomOut)
         view_menu.addAction("Zoom to &Fit", self._canvas.zoom_fit, shortcut="Ctrl+0")
 
+        help_menu = menubar.addMenu("&Help")
+        help_menu.addAction("&Check for Updates", self._on_check_updates)
+        help_menu.addAction("&About", self._on_about)
+
     def _setup_toolbar(self):
         toolbar = QToolBar("Tools")
         toolbar.setIconSize(QSize(24, 24))
@@ -176,6 +181,9 @@ class MainWindow(QMainWindow):
         self._statusbar.addPermanentWidget(self._pos_label)
         self._size_label = QLabel("32×32")
         self._statusbar.addPermanentWidget(self._size_label)
+        self._version_label = QLabel(f"v{updater.get_current_version()}")
+        self._version_label.setStyleSheet("padding: 0 8px; color: #888;")
+        self._statusbar.addPermanentWidget(self._version_label)
         self.setStatusBar(self._statusbar)
 
     def _connect_signals(self):
@@ -340,6 +348,41 @@ class MainWindow(QMainWindow):
         dlg = ResizeDialog(self._canvas.grid_width, self._canvas.grid_height, self)
         if dlg.exec():
             self._canvas.resize_canvas(dlg.canvas_width, dlg.canvas_height, dlg.anchor)
+
+    def _on_check_updates(self):
+        current = updater.get_current_version()
+        remote = updater.check_remote_version("BrockCade", "pixelartapp")
+        if remote is None:
+            QMessageBox.information(self, "Check for Updates",
+                                    f"Current version: v{current}\n\nCould not check for updates. "
+                                    "Make sure you have an internet connection and gh CLI installed.")
+            return
+
+        if remote == current:
+            QMessageBox.information(self, "Check for Updates",
+                                    f"Current version: v{current}\n\nYou're up to date!")
+            return
+
+        result = QMessageBox.question(
+            self, "Update Available",
+            f"Current version: v{current}\nLatest version: v{remote}\n\nUpdate now?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if result == QMessageBox.Yes:
+            status = updater.apply_update()
+            if status and status.get("success"):
+                QMessageBox.information(self, "Update Complete",
+                                        f"Updated to v{status.get('version', remote)}. Restarting...")
+                updater.restart_app()
+            else:
+                QMessageBox.warning(self, "Update Failed",
+                                    f"Could not apply update.\n{status.get('error', 'Unknown error')}")
+
+    def _on_about(self):
+        QMessageBox.about(self, "About Pixel Art Studio",
+                          f"<b>Pixel Art Studio</b> v{updater.get_current_version()}<br><br>"
+                          "A pixel art painting tool built with PySide6.<br><br>"
+                          "Features: layers, animation, symmetry, onion skinning, and more.")
 
     def closeEvent(self, event):
         if self._modified:
