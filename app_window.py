@@ -17,6 +17,7 @@ from tools import TOOLS, Tool
 from widgets import ColorPalette, LayerPanel, AnimationPanel
 from dialogs import NewCanvasDialog, ResizeDialog
 import updater
+from themes import light_palette, dark_palette
 
 
 class ToolButton(QToolButton):
@@ -44,6 +45,7 @@ class MainWindow(QMainWindow):
         self._current_tool_index = 0
         self._file_path = None
         self._modified = False
+        self._dark_mode = False
 
         self._setup_tools()
         self._setup_menus()
@@ -114,6 +116,10 @@ class MainWindow(QMainWindow):
         view_menu.addAction("Zoom &In", self._canvas.zoom_in, shortcut=QKeySequence.ZoomIn)
         view_menu.addAction("Zoom &Out", self._canvas.zoom_out, shortcut=QKeySequence.ZoomOut)
         view_menu.addAction("Zoom to &Fit", self._canvas.zoom_fit, shortcut="Ctrl+0")
+        view_menu.addSeparator()
+        self._act_dark_mode = QAction("&Dark Mode", self, checkable=True, shortcut="Ctrl+D")
+        self._act_dark_mode.toggled.connect(self._toggle_theme)
+        view_menu.addAction(self._act_dark_mode)
 
         help_menu = menubar.addMenu("&Help")
         help_menu.addAction("&Check for Updates", self._on_check_updates)
@@ -166,13 +172,13 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.BottomDockWidgetArea, anim_dock)
 
     def _setup_central(self):
-        scroll = QScrollArea()
-        scroll.setWidget(self._canvas)
-        scroll.setWidgetResizable(True)
-        scroll.setAlignment(Qt.AlignCenter)
-        scroll.setStyleSheet("QScrollArea { background-color: #CCCCCC; border: none; }")
+        self._scroll = QScrollArea()
+        self._scroll.setWidget(self._canvas)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setAlignment(Qt.AlignCenter)
+        self._scroll.setStyleSheet("QScrollArea { background-color: #CCCCCC; border: none; }")
         self._canvas.setStyleSheet("background-color: #DDDDDD;")
-        self.setCentralWidget(scroll)
+        self.setCentralWidget(self._scroll)
 
     def _setup_statusbar(self):
         self._statusbar = QStatusBar()
@@ -257,6 +263,18 @@ class MainWindow(QMainWindow):
         canvas._active_frame = saved_frame
         canvas.update()
         self._size_label.setText(f"{canvas.grid_width}×{canvas.grid_height}")
+
+    def _toggle_theme(self, dark: bool):
+        self._dark_mode = dark
+        app = QApplication.instance()
+        if dark:
+            app.setPalette(dark_palette())
+            self._scroll.setStyleSheet("QScrollArea { background-color: #1E1E1E; border: none; }")
+            self._canvas.setStyleSheet("background-color: #2D2D2D;")
+        else:
+            app.setPalette(light_palette())
+            self._scroll.setStyleSheet("QScrollArea { background-color: #CCCCCC; border: none; }")
+            self._canvas.setStyleSheet("background-color: #DDDDDD;")
 
     def _update_onion(self):
         on, before, after = self._anim_panel.onion_mode()
