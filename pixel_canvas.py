@@ -43,12 +43,13 @@ class PixelCanvas(QWidget):
         self._zoom = 12
         self._show_grid = True
         self._pixel_pen_size = 1
+        self._brush_size = 1
 
         self._layers: list[Layer] = []
         self._active_layer_index = 0
 
-        self._fps = 12
         self._frames: list[list[Layer]] = []
+        self._frame_durations: list[int] = []
         self._active_frame = 0
         self._onion_skin = False
         self._onion_before = 1
@@ -68,6 +69,7 @@ class PixelCanvas(QWidget):
         self._redo_stack = []
         self._max_undo = 50
         self._drawing = False
+        self._erasing = False
 
         self._composite = QImage()
         self._composite_dirty = True
@@ -85,12 +87,14 @@ class PixelCanvas(QWidget):
         self._grid_w = width
         self._grid_h = height
         self._frames = []
+        self._frame_durations = []
         self._active_frame = 0
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._layers = [Layer("Layer 1", width, height)]
         self._active_layer_index = 0
         self._frames.append([l.copy() for l in self._layers])
+        self._frame_durations.append(100)
         self._composite = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
         self._composite_dirty = True
         self.updateGeometry()
@@ -228,15 +232,38 @@ class PixelCanvas(QWidget):
 
     def add_frame(self):
         self._save_frame_state()
-        new_idx = self._active_frame + 1
-        self._frames.insert(new_idx, [l.copy() for l in self._layers])
+        new_idx = len(self._frames)
+        empty_layers = [Layer(l.name, self._grid_w, self._grid_h, Qt.transparent) for l in self._layers]
+        self._frames.append(empty_layers)
+        self._frame_durations.append(100)
         self._active_frame = new_idx
+        self._load_frame_state(new_idx)
+        self.layers_changed.emit()
+        self.update()
+
+    def move_frame(self, from_idx: int, to_idx: int):
+        if from_idx == to_idx:
+            return
+        self._save_frame_state()
+        frame = self._frames.pop(from_idx)
+        dur = self._frame_durations.pop(from_idx)
+        self._frames.insert(to_idx, frame)
+        self._frame_durations.insert(to_idx, dur)
+        if self._active_frame == from_idx:
+            self._active_frame = to_idx
+        else:
+            if from_idx < self._active_frame <= to_idx:
+                self._active_frame -= 1
+            elif to_idx <= self._active_frame < from_idx:
+                self._active_frame += 1
+        self.layers_changed.emit()
         self.update()
 
     def delete_frame(self):
         if len(self._frames) <= 1:
             return
         self._frames.pop(self._active_frame)
+        self._frame_durations.pop(self._active_frame)
         self._active_frame = min(self._active_frame, len(self._frames) - 1)
         self._load_frame_state(self._active_frame)
 
@@ -244,7 +271,9 @@ class PixelCanvas(QWidget):
         self._save_frame_state()
         new_idx = self._active_frame + 1
         self._frames.insert(new_idx, [l.copy() for l in self._layers])
+        self._frame_durations.insert(new_idx, self._frame_durations[self._active_frame])
         self._active_frame = new_idx
+        self.layers_changed.emit()
         self.update()
 
     def goto_frame(self, idx: int):
@@ -253,6 +282,9 @@ class PixelCanvas(QWidget):
         self._save_frame_state()
         self._active_frame = idx
         self._load_frame_state(idx)
+        if self._playing:
+            self.killTimer(self._play_timer)
+            self._play_timer = self.startTimer(self.frame_duration(idx))
 
     def next_frame(self):
         self.goto_frame((self._active_frame + 1) % len(self._frames))
@@ -267,8 +299,14 @@ class PixelCanvas(QWidget):
     def active_frame(self) -> int:
         return self._active_frame
 
-    def set_fps(self, fps: int):
-        self._fps = max(1, fps)
+    def set_frame_duration(self, frame_idx: int, ms: int):
+        if 0 <= frame_idx < len(self._frame_durations):
+            self._frame_durations[frame_idx] = max(1, ms)
+
+    def frame_duration(self, frame_idx: int) -> int:
+        if 0 <= frame_idx < len(self._frame_durations):
+            return self._frame_durations[frame_idx]
+        return 100
 
     def play_animation(self):
         if self._playing:
@@ -278,7 +316,7 @@ class PixelCanvas(QWidget):
                 self._play_timer = None
             return
         self._playing = True
-        self._play_timer = self.startTimer(1000 // self._fps)
+        self._play_timer = self.startTimer(self.frame_duration(self._active_frame))
 
     @property
     def is_playing(self) -> bool:
@@ -370,10 +408,21 @@ class PixelCanvas(QWidget):
             return self._layers[layer_idx].image.pixelColor(x, y)
         return Qt.transparent
 
+    @property
+    def brush_size(self) -> int:
+        return self._brush_size
+
+    @brush_size.setter
+    def brush_size(self, s: int):
+        self._brush_size = max(1, s)
+
     def draw_pixel(self, x: int, y: int, color: QColor):
         points = self.get_symmetric_points(x, y)
+        r = self._brush_size // 2
         for p in points:
-            self.set_pixel(p.x(), p.y(), color)
+            for dx in range(-r, self._brush_size - r):
+                for dy in range(-r, self._brush_size - r):
+                    self.set_pixel(p.x() + dx, p.y() + dy, color)
 
     def draw_line(self, x0: int, y0: int, x1: int, y1: int, color: QColor):
         points = self._bresenham_line(x0, y0, x1, y1)
@@ -484,6 +533,17 @@ class PixelCanvas(QWidget):
                 y0 += sy
         return points
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Z and event.modifiers() == Qt.ControlModifier:
+            self.undo()
+            event.accept()
+            return
+        if event.key() == Qt.Key_Z and event.modifiers() == (Qt.ControlModifier | Qt.ShiftModifier):
+            self.redo()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     # --- Undo/Redo ---
 
     def undo(self):
@@ -492,8 +552,7 @@ class PixelCanvas(QWidget):
         cmd = self._undo_stack.pop()
         cmd.undo(self)
         self._redo_stack.append(cmd)
-        self._composite_dirty = True
-        self._load_frame_state(self._active_frame)
+        self.layers_changed.emit()
         self.update()
 
     def redo(self):
@@ -502,8 +561,7 @@ class PixelCanvas(QWidget):
         cmd = self._redo_stack.pop()
         cmd.redo(self)
         self._undo_stack.append(cmd)
-        self._composite_dirty = True
-        self._load_frame_state(self._active_frame)
+        self.layers_changed.emit()
         self.update()
 
     def can_undo(self) -> bool:
@@ -619,10 +677,15 @@ class PixelCanvas(QWidget):
         mx, my = self._mouse_pixel.x(), self._mouse_pixel.y()
         if 0 <= mx < self._grid_w and 0 <= my < self._grid_h:
             if not self._mouse_down:
+                z = self._zoom
+                r = self._brush_size // 2
+                bx = (mx - r) * z
+                by = (my - r) * z
+                bw = self._brush_size * z
                 painter.setPen(QPen(QColor(255, 255, 255, 180), 2))
-                painter.drawRect(mx * self._zoom + 1, my * self._zoom + 1, self._zoom - 2, self._zoom - 2)
+                painter.drawRect(bx + 1, by + 1, bw - 2, bw - 2)
                 painter.setPen(QPen(QColor(0, 0, 0, 120), 1))
-                painter.drawRect(mx * self._zoom, my * self._zoom, self._zoom, self._zoom)
+                painter.drawRect(bx, by, bw, bw)
 
     def mousePressEvent(self, event):
         self._mouse_pixel = self._screen_to_pixel(event.position().toPoint())
@@ -631,22 +694,37 @@ class PixelCanvas(QWidget):
 
         if event.button() == Qt.LeftButton:
             self._mouse_down = True
+            self._erasing = False
             if self._tool:
                 self._tool.mouse_press(self, self._mouse_pixel)
+        elif event.button() == Qt.RightButton:
+            self._mouse_down = True
+            self._erasing = True
+            self.begin_draw()
+            self.draw_pixel(self._mouse_pixel.x(), self._mouse_pixel.y(), Qt.transparent)
 
     def mouseMoveEvent(self, event):
         new_pixel = self._screen_to_pixel(event.position().toPoint())
         if new_pixel != self._mouse_pixel:
+            old_pixel = self._mouse_pixel
             self._mouse_pixel = new_pixel
-            if self._mouse_down and self._tool:
+            if self._erasing:
+                self.draw_line(old_pixel.x(), old_pixel.y(), new_pixel.x(), new_pixel.y(), Qt.transparent)
+                self._composite_dirty = True
+                self.update()
+            elif self._mouse_down and self._tool:
                 self._tool.mouse_move(self, self._mouse_pixel)
             self.update()
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.LeftButton and not self._erasing:
             self._mouse_down = False
             if self._tool:
                 self._tool.mouse_release(self, self._mouse_pixel)
+        elif event.button() == Qt.RightButton or self._erasing:
+            self._mouse_down = False
+            self._erasing = False
+            self.end_draw()
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
@@ -659,6 +737,9 @@ class PixelCanvas(QWidget):
     def timerEvent(self, event):
         if self._play_timer and event.timerId() == self._play_timer:
             self.next_frame()
+            if self._playing:
+                self.killTimer(self._play_timer)
+                self._play_timer = self.startTimer(self.frame_duration(self._active_frame))
 
     def _screen_to_pixel(self, point) -> QPoint:
         return QPoint(point.x() // self._zoom, point.y() // self._zoom)

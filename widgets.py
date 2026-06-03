@@ -222,24 +222,50 @@ class LayerPanel(QWidget):
 
 class FrameThumbnail(QFrame):
     clicked = Signal(int)
-    def __init__(self, index: int, pixmap: QPixmap):
+    duration_changed = Signal(int, int)
+    index_changed = Signal(int, int)
+
+    def __init__(self, index: int, pixmap: QPixmap, duration_ms: int = 100, frame_count: int = 1):
         super().__init__()
         self.index = index
         self._selected = False
+        self._frame_count = frame_count
         self.setToolTip(f"Frame {index + 1}")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(1)
         self._label = QLabel()
         self._label.setFixedSize(48, 48)
         self._label.setPixmap(pixmap.scaled(48, 48, Qt.KeepAspectRatio, Qt.FastTransformation))
         self._label.setAlignment(Qt.AlignCenter)
-        self._index_label = QLabel(str(index + 1))
-        self._index_label.setAlignment(Qt.AlignCenter)
-        self._index_label.setStyleSheet("font-size: 9px; color: #888;")
+        self._index_spin = QSpinBox()
+        self._index_spin.setRange(1, frame_count)
+        self._index_spin.setFixedWidth(72)
+        self._index_spin.setAlignment(Qt.AlignCenter)
+        self._index_spin.setStyleSheet("color: white; background: #3A3A3A; border: 1px solid #555; border-radius: 2px;")
+        self._index_spin.blockSignals(True)
+        self._index_spin.setValue(index + 1)
+        self._index_spin.blockSignals(False)
+        self._index_spin.valueChanged.connect(self._on_index_changed)
+        self._dur_spin = QSpinBox()
+        self._dur_spin.setRange(1, 99999)
+        self._dur_spin.setValue(duration_ms)
+        self._dur_spin.setSuffix("ms")
+        self._dur_spin.setFixedWidth(72)
+        self._dur_spin.setAlignment(Qt.AlignCenter)
+        self._dur_spin.setStyleSheet("color: white; background: #3A3A3A; border: 1px solid #555; border-radius: 2px;")
+        self._dur_spin.valueChanged.connect(self._on_duration_changed)
         layout.addWidget(self._label)
-        layout.addWidget(self._index_label)
+        layout.addWidget(self._index_spin)
+        layout.addWidget(self._dur_spin)
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedWidth(60)
+        self.setFixedWidth(78)
+
+    def _on_duration_changed(self, ms: int):
+        self.duration_changed.emit(self.index, ms)
+
+    def _on_index_changed(self, new_idx: int):
+        self.index_changed.emit(self.index, new_idx - 1)
 
     def set_selected(self, sel: bool):
         self._selected = sel
@@ -248,6 +274,11 @@ class FrameThumbnail(QFrame):
 
     def update_pixmap(self, pixmap: QPixmap):
         self._label.setPixmap(pixmap.scaled(48, 48, Qt.KeepAspectRatio, Qt.FastTransformation))
+
+    def set_duration(self, ms: int):
+        self._dur_spin.blockSignals(True)
+        self._dur_spin.setValue(ms)
+        self._dur_spin.blockSignals(False)
 
     def mousePressEvent(self, event):
         self.clicked.emit(self.index)
@@ -259,6 +290,8 @@ class AnimationPanel(QWidget):
     delete_frame_requested = Signal()
     duplicate_frame_requested = Signal()
     play_toggled = Signal()
+    frame_duration_changed = Signal(int, int)
+    frame_moved = Signal(int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -276,13 +309,6 @@ class AnimationPanel(QWidget):
             btn.setFixedSize(26, 26)
             toolbar.addWidget(btn)
 
-        toolbar.addWidget(QLabel("FPS:"))
-        self._fps_spin = QSpinBox()
-        self._fps_spin.setRange(1, 60)
-        self._fps_spin.setValue(12)
-        self._fps_spin.setToolTip("Frames per second")
-        toolbar.addWidget(self._fps_spin)
-
         self._onion_cb = QComboBox()
         self._onion_cb.addItems(["Off", "1 Before", "2 Before", "1+1", "1 Before+After"])
         self._onion_cb.currentIndexChanged.connect(self._on_onion_change)
@@ -296,7 +322,7 @@ class AnimationPanel(QWidget):
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._scroll.setMaximumHeight(100)
+        self._scroll.setMaximumHeight(2000)
 
         self._frames_widget = QWidget()
         self._frames_layout = QHBoxLayout(self._frames_widget)
@@ -328,7 +354,7 @@ class AnimationPanel(QWidget):
             4: (True, 1, 1),
         }.get(idx, (False, 0, 0))
 
-    def update_frames(self, frames_count: int, active_frame: int, get_thumb_fn):
+    def update_frames(self, frames_count: int, active_frame: int, get_thumb_fn, get_duration_fn=None):
         self._thumbnails.clear()
         while self._frames_layout.count():
             item = self._frames_layout.takeAt(0)
@@ -338,8 +364,11 @@ class AnimationPanel(QWidget):
 
         for i in range(frames_count):
             thumb = get_thumb_fn(i)
-            ft = FrameThumbnail(i, thumb)
+            dur = get_duration_fn(i) if get_duration_fn else 100
+            ft = FrameThumbnail(i, thumb, dur, frames_count)
             ft.clicked.connect(lambda idx, i=i: self.goto_frame_requested.emit(i))
+            ft.duration_changed.connect(self.frame_duration_changed.emit)
+            ft.index_changed.connect(lambda from_i, to_i, self=self: self.frame_moved.emit(from_i, to_i))
             ft.set_selected(i == active_frame)
             self._thumbnails.append(ft)
             self._frames_layout.addWidget(ft)

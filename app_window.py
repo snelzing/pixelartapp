@@ -2,14 +2,14 @@ import os
 from PySide6.QtCore import Qt, QPoint, QRect, QSize, QByteArray
 from PySide6.QtGui import (
     QAction, QColor, QImage, QKeySequence, QPixmap,
-    QIcon, QPainter, QFont, QPen, QActionGroup,
+    QIcon, QPainter, QFont, QPen, QActionGroup, QShortcut,
 )
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QToolBar, QMenuBar, QMenu, QFileDialog,
     QMessageBox, QLabel, QScrollArea, QFrame, QSizePolicy,
     QToolButton, QButtonGroup, QApplication, QStatusBar,
-    QSplitter, QDockWidget, QStackedWidget,
+    QSplitter, QDockWidget, QStackedWidget, QSpinBox,
 )
 from PySide6.QtGui import QActionGroup
 from pixel_canvas import PixelCanvas, Symmetry
@@ -77,8 +77,8 @@ class MainWindow(QMainWindow):
         file_menu.addActions([self._act_new, self._act_open, self._act_save, self._act_save_as, self._act_export])
 
         edit_menu = menubar.addMenu("&Edit")
-        self._act_undo = QAction("&Undo", self, shortcut=QKeySequence.Undo, triggered=self._canvas.undo)
-        self._act_redo = QAction("&Redo", self, shortcut=QKeySequence.Redo, triggered=self._canvas.redo)
+        self._act_undo = QAction("&Undo", self, triggered=self._canvas.undo)
+        self._act_redo = QAction("&Redo", self, triggered=self._canvas.redo)
         edit_menu.addActions([self._act_undo, self._act_redo])
 
         layer_menu = menubar.addMenu("&Layer")
@@ -155,6 +155,20 @@ class MainWindow(QMainWindow):
         self._color_indicator.setToolTip("Current color")
         toolbar.addWidget(self._color_indicator)
 
+        toolbar.addSeparator()
+        lbl = QLabel("Brush:")
+        lbl.setStyleSheet("color: #ccc;")
+        toolbar.addWidget(lbl)
+        self._brush_spin = QSpinBox()
+        self._brush_spin.setRange(1, 32)
+        self._brush_spin.setValue(1)
+        self._brush_spin.setFixedWidth(48)
+        self._brush_spin.valueChanged.connect(lambda v: setattr(self._canvas, 'brush_size', v))
+        toolbar.addWidget(self._brush_spin)
+
+        QShortcut(QKeySequence("["), self, activated=self._brush_decrease)
+        QShortcut(QKeySequence("]"), self, activated=self._brush_increase)
+
     def _setup_docks(self):
         self._palette = ColorPalette()
         pal_dock = QDockWidget("Palette", self)
@@ -170,6 +184,7 @@ class MainWindow(QMainWindow):
         anim_dock = QDockWidget("Animation", self)
         anim_dock.setWidget(self._anim_panel)
         self.addDockWidget(Qt.BottomDockWidgetArea, anim_dock)
+        self.resizeDocks([anim_dock], [400], Qt.Vertical)
 
     def _setup_central(self):
         self._scroll = QScrollArea()
@@ -179,6 +194,7 @@ class MainWindow(QMainWindow):
         self._scroll.setStyleSheet("QScrollArea { background-color: #CCCCCC; border: none; }")
         self._canvas.setStyleSheet("background-color: #DDDDDD;")
         self.setCentralWidget(self._scroll)
+        self._canvas.setFocus()
 
     def _setup_statusbar(self):
         self._statusbar = QStatusBar()
@@ -214,7 +230,8 @@ class MainWindow(QMainWindow):
         self._anim_panel.delete_frame_requested.connect(self._canvas.delete_frame)
         self._anim_panel.duplicate_frame_requested.connect(self._canvas.duplicate_frame)
         self._anim_panel.play_toggled.connect(self._on_play_toggle)
-        self._anim_panel._fps_spin.valueChanged.connect(self._canvas.set_fps)
+        self._anim_panel.frame_duration_changed.connect(self._canvas.set_frame_duration)
+        self._anim_panel.frame_moved.connect(self._canvas.move_frame)
         self._anim_panel._onion_cb.currentIndexChanged.connect(self._update_onion)
 
         self._canvas.layers_changed.connect(self._update_frame_panel)
@@ -256,7 +273,10 @@ class MainWindow(QMainWindow):
                 return QPixmap.fromImage(img)
             return QPixmap(canvas.grid_width, canvas.grid_height)
 
-        self._anim_panel.update_frames(canvas.frame_count(), saved_frame, get_thumb)
+        def get_dur(idx):
+            return canvas.frame_duration(idx)
+
+        self._anim_panel.update_frames(canvas.frame_count(), saved_frame, get_thumb, get_dur)
 
         canvas._layers = saved_layers
         canvas._composite_dirty = True
@@ -396,6 +416,18 @@ class MainWindow(QMainWindow):
             else:
                 QMessageBox.warning(self, "Update Failed",
                                     f"Could not apply update.\n{status.get('error', 'Unknown error')}")
+
+    def _brush_decrease(self):
+        v = self._canvas.brush_size - 1
+        if v >= 1:
+            self._canvas.brush_size = v
+            self._brush_spin.setValue(v)
+
+    def _brush_increase(self):
+        v = self._canvas.brush_size + 1
+        if v <= 32:
+            self._canvas.brush_size = v
+            self._brush_spin.setValue(v)
 
     def _on_about(self):
         QMessageBox.about(self, "About Pixel Art Studio",
